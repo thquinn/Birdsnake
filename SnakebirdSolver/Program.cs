@@ -72,7 +72,7 @@ namespace SnakebirdSolver
                 if (y > 0 && !bird.Contains(x, y - 1))
                     children.Add(Move(i, 0, -1));
                 // Down.
-                if (y < level.GetLength(1) - 1 && !bird.Contains(x, y + 1))
+                if (y < level.GetLength(1) - 2 && !bird.Contains(x, y + 1))
                     children.Add(Move(i, 0, 1));
             }
 
@@ -114,77 +114,60 @@ namespace SnakebirdSolver
 
         public bool FallAll()
         {
-            // Fall all of the birds at once.
-            int minFall = int.MaxValue;
-            foreach (Bird bird in birds)
-                foreach (Tuple<int, int> c in bird.coor)
-                {
-                    int fall = 0;
-                    for (int y = c.Item2 + 1; y < level.GetLength(1); y++)
-                        if (!IsSolid(level[c.Item1, y]))
-                            fall++;
-                        else
-                            break;
-                    if (fall < minFall)
-                        minFall = fall;
-                }
-            List<Bird> birdsToRemove = new List<Bird>();
-            foreach (Bird bird in birds)
+            // Kill anything in the bottom row.
+            for (int i = birds.Count - 1; i >= 0; i--)
             {
-                for (int i = 0; i < bird.coor.Count; i++)
-                {
-                    bird.coor[i] = new Tuple<int, int>(bird.coor[i].Item1, bird.coor[i].Item2 + minFall);
-                    Tuple<int, int> c = bird.coor[i];
-                    // Landed at the bottom of the level.
-                    if (c.Item2 == level.GetLength(1) - 1)
-                        if (bird.isObject && OBJECTS_CAN_DIE)
+                Bird bird = birds[i];
+                foreach (Tuple<int, int> c in bird.coor)
+                    if (c.Item2 >= level.GetLength(1) - 1)
+                        if (!bird.isObject || !OBJECTS_CAN_DIE)
+                            return false;
+                        else
                         {
-                            birdsToRemove.Add(bird);
+                            birds.Remove(bird);
                             break;
                         }
-                        else
-                            return false;
-                }
             }
-            foreach (Bird bird in birdsToRemove)
-                birds.Remove(bird);
 
-            // Fall each bird until none of them fall.
-            bool noneFell = false;
-            while (!noneFell)
+            // Fall all birds at once. When one or more birds land on a surface, remove them from the falling group. Repeat until the falling group is empty.
+            List<Bird> fallingBirds = new List<Bird>(birds);
+            int times = 0;
+            while (fallingBirds.Count > 0)
             {
-                noneFell = true;
-                foreach (Bird bird in birds)
+                bool fall = true;
+                times++;
+                // Check for landed birds.
+                for (int i = fallingBirds.Count - 1; i >= 0; i--)
                 {
-                    birdsToRemove = new List<Bird>();
-                    minFall = int.MaxValue;
-                    foreach (Tuple<int, int> c in bird.coor)
+                    Bird fallingBird = fallingBirds[i];
+                    foreach (Tuple<int, int> c in fallingBird.coor)
+                        if (IsSolid(level[c.Item1, c.Item2 + 1]) || AreOtherBirdsAt(fallingBirds, c.Item1, c.Item2 + 1))
+                        {
+                            fallingBirds.Remove(fallingBird);
+                            fall = false;
+                            break;
+                        }
+                }
+                if (fall)
+                {
+                    // Fall every falling bird.
+                    foreach (Bird fallingBird in fallingBirds)
+                        for (int i = 0; i < fallingBird.coor.Count; i++)
+                            fallingBird.coor[i] = new Tuple<int, int>(fallingBird.coor[i].Item1, fallingBird.coor[i].Item2 + 1);
+                    // Kill anything in the bottom row.
+                    for (int i = birds.Count - 1; i >= 0; i--)
                     {
-                        int fall = 0;
-                        for (int y = c.Item2 + 1; y < level.GetLength(1); y++)
-                            if (!IsSolid(level[c.Item1, y]) && !IsOtherBirdAt(bird, c.Item1, y))
-                                fall++;
-                            else
-                                break;
-                        if (fall < minFall)
-                            minFall = fall;
-                    }
-                    if (minFall == 0)
-                        continue;
-                    noneFell = false;
-                    for (int i = 0; i < bird.coor.Count; i++)
-                    {
-                        bird.coor[i] = new Tuple<int, int>(bird.coor[i].Item1, bird.coor[i].Item2 + minFall);
-                        Tuple<int, int> c = bird.coor[i];
-                        // Landed at the bottom of the level.
-                        if (c.Item2 == level.GetLength(1) - 1)
-                            if (bird.isObject && OBJECTS_CAN_DIE)
-                            {
-                                birdsToRemove.Add(bird);
-                                break;
-                            }
-                            else
-                                return false;
+                        Bird bird = birds[i];
+                        foreach (Tuple<int, int> c in bird.coor)
+                            if (c.Item2 >= level.GetLength(1) - 1)
+                                if (!bird.isObject || !OBJECTS_CAN_DIE)
+                                    return false;
+                                else
+                                {
+                                    fallingBirds.Remove(bird);
+                                    birds.Remove(bird);
+                                    break;
+                                }
                     }
                 }
             }
@@ -210,9 +193,14 @@ namespace SnakebirdSolver
 
         public bool IsOtherBirdAt(Bird bird, int x, int y)
         {
+            return AreOtherBirdsAt(new List<Bird>(new Bird[] { bird }), x, y);
+        }
+
+        public bool AreOtherBirdsAt(IEnumerable<Bird> ourBirds, int x, int y)
+        {
             foreach (Bird other in birds)
             {
-                if (other == bird)
+                if (ourBirds.Contains(other))
                     continue;
                 if (other.Contains(x, y))
                     return true;
@@ -426,10 +414,10 @@ namespace SnakebirdSolver
 
         public bool Move(State state, int dx, int dy, bool fruitEat)
         {
-            if (!fruitEat)
-                coor.RemoveAt(coor.Count - 1);
             int x = coor[0].Item1 + dx;
             int y = coor[0].Item2 + dy;
+            if (!fruitEat)
+                coor.RemoveAt(coor.Count - 1);
             coor.Insert(0, new Tuple<int,int>(x, y));
 
             // Push other birds.
@@ -525,12 +513,16 @@ namespace SnakebirdSolver
             // # fourth object
             // / row delimiter
 
+            // Simple Test:
+            //string levelString = "........./........./4321BA..@/======XX=";
             // Spike + Object Test:
             //string levelString = "......../.%21...@/====..==/====XX==/========";
             // Partial Solve Test:
             //string levelString = ".........../.........../...1......@/..32%%...../..4$$....../..5=......./...A......./..CB......./..D=......./..E......../...=.......";
             // Partial Solve Test 2:
             //string levelString = ".........@/.X......../...X....../...21X..../.DCBA...../.X====..X=/..====...=";
+            // Gravity Test (should be impossible):
+            //string levelString = "...../....@/..21./====./....%/....A/....%/=====";
             // Level 1:
             //string levelString = "...@../....../=....=/*..=*=/....../.=21../.====.";
             // Level 7:
@@ -560,7 +552,7 @@ namespace SnakebirdSolver
             // Level 27:
             //string levelString = "....*..../...==..../...==..../...==..../........./........./.X....X../.==..==../.X..%.X../........./.21.%.AB@/.======C./.======D.";
             // Level 28:
-            //string levelString = "....../....../...@../....../....../....../=.%.../===..X/..*=../...=../X=%.../...321/..=ABC/.=====";
+            string levelString = ".....@..../........../........../..=.%...../..===..X../....*=..../.....=..../..X=%...../.....321../....=ABC../...=====../...=====..";
             // Level 29:
             //string levelString = "......@..../.........../.........../.........../.........../.........../...123...../...%%....../...%%....../.$$&&##..../.$$&&##.ABC/.=====..==./.==========";
             // Level 39:
@@ -578,7 +570,7 @@ namespace SnakebirdSolver
             // Level *1:
             //string levelString = "........=XXXXX......../........=............./........=............./........=.XXXX......../..@..........X......../....................../...............123.=../.===............%4..../====................../====...........ABC..=./.==............abcd.../................%...../...............=====../...............=====../................===...";
             // Level *2:
-            string levelString = ".=======....../.=.*.*.==...../==*=*=*==.===./=*******======/=.=*=*=.123.@=/=*******=====./==*=*=*====.../.=.*.*.=....../..======......";
+            //string levelString = ".=======....../.=.*.*.==...../==*=*=*==.===./=*******======/=.=*=*=.123.@=/=*******=====./==*=*=*====.../.=.*.*.=....../..======......";
             // Level *4:
             //string levelString = "......@....../............./............./............./......X....../....%...%..../....$..X$..../....&...&..../...123XCBA.../..=========..";
             // Level *6:
