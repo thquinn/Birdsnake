@@ -45,3 +45,7 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# VS binary files
+SnakebirdSolver/bin/*
+SnakebirdSolver/obj/*
