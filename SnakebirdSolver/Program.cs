@@ -1,8 +1,8 @@
 ﻿// TODO
-//   - Fall birds together until one or more birds hits a solid object. Remove those from the set, then fall the rest until one or more hits a solid object OR a bird not in the set. Repeat until set is empty.
-//   - Implement teleporter.
-//   - If a bird falls or is pushed into a teleporter, remove it.
-//   - Store coordinates as single numbers instead of tuples?
+//    - Test that state hashing is actually detecting functionally identical states.
+//    - Only allow birds to teleport if they weren't in the same square with the teleporter in the previous state or during a fall.
+//    - If a bird falls or is pushed into an exit, remove it.
+//    - Store coordinates as single numbers instead of tuples?
 
 using System;
 using System.Collections.Generic;
@@ -14,12 +14,12 @@ namespace SnakebirdSolver
 {
     enum Block
     {
-        EMPTY, PLATFORM, FRUIT, SPIKE, PORTAL
+        EMPTY, PLATFORM, FRUIT, SPIKE, TELEPORTER, EXIT
     }
 
     class State
     {
-        // Set this flag if you're sure no objects should fall off an edge during the correct solution.
+        // Set this flag to false if you're sure no objects should fall off an edge during the correct solution.
         static bool OBJECTS_CAN_DIE = true;
 
         public static StringBuilder sb = new StringBuilder();
@@ -93,7 +93,7 @@ namespace SnakebirdSolver
                 copy.level[headC.Item1 + dx, headC.Item2 + dy] = Block.EMPTY;
             }
             // Check for win.
-            if (copy.level[headC.Item1 + dx, headC.Item2 + dy] == Block.PORTAL && copy.NoFruits())
+            if (copy.level[headC.Item1 + dx, headC.Item2 + dy] == Block.EXIT && copy.NoFruits())
             {
                 copy.birds.RemoveAt(birdIndex);
                 if (copy.NoBirds())
@@ -114,29 +114,68 @@ namespace SnakebirdSolver
 
         public bool FallAll()
         {
-            // Kill anything in the bottom row.
-            for (int i = birds.Count - 1; i >= 0; i--)
-            {
-                Bird bird = birds[i];
-                foreach (Tuple<int, int> c in bird.coor)
-                    if (c.Item2 >= level.GetLength(1) - 1)
-                        if (!bird.isObject || !OBJECTS_CAN_DIE)
-                            return false;
-                        else
-                        {
-                            birds.Remove(bird);
-                            break;
-                        }
-            }
-
             // Fall all birds at once. When one or more birds land on a surface, remove them from the falling group. Repeat until the falling group is empty.
             List<Bird> fallingBirds = new List<Bird>(birds);
-            int times = 0;
             while (fallingBirds.Count > 0)
             {
-                bool fall = true;
-                times++;
+                // Check for teleporting birds.
+                foreach (Bird bird in fallingBirds)
+                    foreach (Tuple<int, int> c in bird.coor)
+                        if (level[c.Item1, c.Item2] == Block.TELEPORTER)
+                        {
+                            // Find the other teleporter.
+                            int tx = -1, ty = -1;
+                            for (int x = 0; x < level.GetLength(0) && tx == -1; x++)
+                                for (int y = 0; y < level.GetLength(1) - 1; y++)
+                                    if (x == c.Item1 && y == c.Item2)
+                                        continue;
+                                    else if (level[x, y] == Block.TELEPORTER)
+                                    {
+                                        tx = x;
+                                        ty = y;
+                                        break;
+                                    }
+                            // Check all coordinates to make see if the other side of the teleporter is empty.
+                            bool tpClear = true;
+                            foreach (Tuple<int, int> cCheck in bird.coor)
+                            {
+                                int dx = cCheck.Item1 - c.Item1;
+                                int dy = cCheck.Item2 - c.Item2;
+                                if (IsSolid(level[tx + dx, ty + dy]))
+                                {
+                                    tpClear = false;
+                                    break;
+                                }
+                            }
+                            if (tpClear)
+                            {
+                                int shiftX = tx - c.Item1;
+                                int shiftY = ty - c.Item2;
+                                for (int i = 0; i < bird.coor.Count; i++)
+                                    bird.coor[i] = new Tuple<int, int>(bird.coor[i].Item1 + shiftX, bird.coor[i].Item2 + shiftY);
+                            }
+                            break;
+                        }
+
+                // Kill anything in the bottom row.
+                // We shouldn't have to do this check again here, but it's not working without it, so...
+                for (int i = birds.Count - 1; i >= 0; i--)
+                {
+                    Bird bird = birds[i];
+                    foreach (Tuple<int, int> c in bird.coor)
+                        if (c.Item2 >= level.GetLength(1) - 1)
+                            if (!bird.isObject || !OBJECTS_CAN_DIE)
+                                return false;
+                            else
+                            {
+                                fallingBirds.Remove(bird);
+                                birds.Remove(bird);
+                                break;
+                            }
+                }
+                
                 // Check for landed birds.
+                bool fall = true;
                 for (int i = fallingBirds.Count - 1; i >= 0; i--)
                 {
                     Bird fallingBird = fallingBirds[i];
@@ -279,7 +318,10 @@ namespace SnakebirdSolver
                             case Block.SPIKE:
                                 sb.Append('X');
                                 break;
-                            case Block.PORTAL:
+                            case Block.TELEPORTER:
+                                sb.Append('O');
+                                break;
+                            case Block.EXIT:
                                 sb.Append('@');
                                 break;
                         }
@@ -341,8 +383,11 @@ namespace SnakebirdSolver
                         case 'X':
                             level[x, y] = Block.SPIKE;
                             break;
+                        case 'O':
+                            level[x, y] = Block.TELEPORTER;
+                            break;
                         case '@':
-                            level[x, y] = Block.PORTAL;
+                            level[x, y] = Block.EXIT;
                             break;
                         default:
                             level[x, y] = Block.EMPTY;
@@ -358,7 +403,7 @@ namespace SnakebirdSolver
 
         public static bool CanMoveInto(Block block)
         {
-            return block == Block.EMPTY || block == Block.FRUIT || block == Block.PORTAL;
+            return block == Block.EMPTY || block == Block.FRUIT || block == Block.EXIT;
         }
     }
 
@@ -503,7 +548,8 @@ namespace SnakebirdSolver
             // = platform
             // * fruit
             // X spike
-            // O portal
+            // O teleporter
+            // @ exit
             // 1234567890+- first bird
             // ABCDEFGHIJKL second bird
             // abcdefghijkl third bird
@@ -521,6 +567,8 @@ namespace SnakebirdSolver
             //string levelString = ".........../.........../...1......@/..32%%...../..4$$....../..5=......./...A......./..CB......./..D=......./..E......../...=.......";
             // Partial Solve Test 2:
             //string levelString = ".........@/.X......../...X....../...21X..../.DCBA...../.X====..X=/..====...=";
+            // Partial Solve Test 3:
+            string levelString = "......@...../............/............/............/......X...../.$.%.$.%..../.....1.X..../..&CB2&...../....A3X...../..=========./....=====...";
             // Gravity Test (should be impossible):
             //string levelString = "...../....@/..21./====./....%/....A/....%/=====";
             // Level 1:
@@ -538,7 +586,7 @@ namespace SnakebirdSolver
             // Level 18:
             //string levelString = "............/............/......==..../......==..../......==..../.......=..../@......=..../...=.X...123/.....=.=ABC4/..=..=.====./........==../...===....../....==....../.....==X....";
             // Level 19:
-            //string levelString = "................/................/................/....X.........../.X..=.........../.=.@..........*./....12........../...CBA........../...Dab........../...E=c........../...F=d........../....=e..........";
+            //string levelString = "...X.........../X..=.........../=.@..........*./...12........../..CBA........../..Dab........../..E=c........../..F=d........../...=e..........";
             // Level 22:
             //string levelString = ".........../....@....../.........../.........../.........../.........../.321......./..==...%%../..==.=.%%../..==...==../..=======..";
             // Level 23:
@@ -552,9 +600,11 @@ namespace SnakebirdSolver
             // Level 27:
             //string levelString = "....*..../...==..../...==..../...==..../........./........./.X....X../.==..==../.X..%.X../........./.21.%.AB@/.======C./.======D.";
             // Level 28:
-            string levelString = ".....@..../........../........../..=.%...../..===..X../....*=..../.....=..../..X=%...../.....321../....=ABC../...=====../...=====..";
+            //string levelString = ".....@..../........../........../..=.%...../..===..X../....*=..../.....=..../..X=%...../.....321../....=ABC../...=====../...=====..";
             // Level 29:
             //string levelString = "......@..../.........../.........../.........../.........../.........../...123...../...%%....../...%%....../.$$&&##..../.$$&&##.ABC/.=====..==./.==========";
+            // Level 35:
+            //string levelString = ".=====../......../.....=../.....X../......*./...O.=../.....=../......../@.321.../..4=..../...=..../....O.../...XX.../...*..../...==.../...==...";
             // Level 39:
             //string levelString = ".........@/........../........../.......===/.......===/........==/.......===/.321...===/.4%%....==/.5$$...===/====..====/==========";
             // Level 40:
@@ -571,6 +621,8 @@ namespace SnakebirdSolver
             //string levelString = "........=XXXXX......../........=............./........=............./........=.XXXX......../..@..........X......../....................../...............123.=../.===............%4..../====................../====...........ABC..=./.==............abcd.../................%...../...............=====../...............=====../................===...";
             // Level *2:
             //string levelString = ".=======....../.=.*.*.==...../==*=*=*==.===./=*******======/=.=*=*=.123.@=/=*******=====./==*=*=*====.../.=.*.*.=....../..======......";
+            // Level *3:
+            //string levelString = "..........=..../..........=..../@........%%%..X/.........%1%.../.........%2%.../..........3..../........BA4...X/....=...Ccba=XX/...==....X=XX../.............../...==........../.......=.......";
             // Level *4:
             //string levelString = "......@....../............./............./............./......X....../....%...%..../....$..X$..../....&...&..../...123XCBA.../..=========..";
             // Level *6:

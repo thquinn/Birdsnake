@@ -8,7 +8,7 @@ Uncomment the levelString for the level you want to solve, or add your own by fo
 = platform
 * fruit
 X spike
-O portal
+@ portal
 1234567890+- first bird
 ABCDEFGHIJKL second bird
 abcdefghijkl third bird
