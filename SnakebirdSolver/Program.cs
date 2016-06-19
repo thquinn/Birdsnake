@@ -247,6 +247,14 @@ namespace SnakebirdSolver
             return false;
         }
 
+        public Bird GetBirdAt(int x, int y)
+        {
+            foreach (Bird bird in birds)
+                if (bird.Contains(new Tuple<int, int>(x, y)))
+                    return bird;
+            return null;
+        }
+
         public bool NoFruits()
         {
             for (int x = 0; x < level.GetLength(0); x++)
@@ -336,7 +344,7 @@ namespace SnakebirdSolver
             if (!(obj is State))
                 return false;
             State other = (State)obj;
-            return ToString() == other.ToString();
+            return GetHashCode() == other.GetHashCode();
         }
 
         public override int GetHashCode()
@@ -568,7 +576,7 @@ namespace SnakebirdSolver
             // Partial Solve Test 2:
             //string levelString = ".........@/.X......../...X....../...21X..../.DCBA...../.X====..X=/..====...=";
             // Partial Solve Test 3:
-            string levelString = "......@...../............/............/............/......X...../.$.%.$.%..../.....1.X..../..&CB2&...../....A3X...../..=========./....=====...";
+            //string levelString = "......@...../............/............/............/......X...../.$.%.$.%..../.....1.X..../..&CB2&...../....A3X...../..=========./....=====...";
             // Gravity Test (should be impossible):
             //string levelString = "...../....@/..21./====./....%/....A/....%/=====";
             // Level 1:
@@ -602,7 +610,7 @@ namespace SnakebirdSolver
             // Level 28:
             //string levelString = ".....@..../........../........../..=.%...../..===..X../....*=..../.....=..../..X=%...../.....321../....=ABC../...=====../...=====..";
             // Level 29:
-            //string levelString = "......@..../.........../.........../.........../.........../.........../...123...../...%%....../...%%....../.$$&&##..../.$$&&##.ABC/.=====..==./.==========";
+            string levelString = "......@..../.........../.........../.........../.........../.........../...123...../...%%....../...%%....../.$$&&##..../.$$&&##.ABC/.=====..==./.==========";
             // Level 35:
             //string levelString = ".=====../......../.....=../.....X../......*./...O.=../.....=../......../@.321.../..4=..../...=..../....O.../...XX.../...*..../...==.../...==...";
             // Level 39:
