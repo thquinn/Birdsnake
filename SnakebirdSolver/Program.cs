@@ -12,15 +12,17 @@ using System.Threading.Tasks;
 
 namespace SnakebirdSolver
 {
-    enum Block
+    public enum Block
     {
         EMPTY, PLATFORM, FRUIT, SPIKE, TELEPORTER, EXIT
     }
 
-    class State
+    public class State : IComparable<State>
     {
         // Set this flag to false if you're sure no objects should fall off an edge during the correct solution.
         static bool OBJECTS_CAN_DIE = false;
+        // Set this flag to true if getting objects closer to the exit seems like it's part of the solution.
+        static bool OBJECTS_IN_HEURISTIC = true;
 
         public static StringBuilder sb = new StringBuilder();
         public Block[,] level;
@@ -264,6 +266,16 @@ namespace SnakebirdSolver
             return true;
         }
 
+        public int NumFruits()
+        {
+            int fruits = 0;
+            for (int x = 0; x < level.GetLength(0); x++)
+                for (int y = 0; y < level.GetLength(1); y++)
+                    if (level[x, y] == Block.FRUIT)
+                        fruits++;
+            return fruits;
+        }
+
         public bool NoBirds()
         {
             foreach (Bird bird in birds)
@@ -291,6 +303,61 @@ namespace SnakebirdSolver
                     else
                         occupied.Add(c);
             return true;
+        }
+
+        public int Heuristic()
+        {
+            int heuristic = 0;
+
+            // If the exit is open, sum distances of bird heads from exit.
+            if (NoFruits())
+            {
+                int ex = -1, ey = -1;
+                for (int x = 0; x < level.GetLength(0) && ex == -1; x++)
+                    for (int y = 0; y < level.GetLength(1); y++)
+                        if (level[x, y] == Block.EXIT)
+                        {
+                            ex = x;
+                            ey = y;
+                            break;
+                        }
+                foreach (Bird bird in birds)
+                    if (OBJECTS_IN_HEURISTIC || !bird.isObject)
+                    {
+                        heuristic += Math.Abs(bird.coor[0].Item1 - ex);
+                        heuristic += Math.Abs(bird.coor[0].Item2 - ey);
+                    }
+                return -heuristic;
+            }
+
+            // Otherwise, sum the distance of bird heads to their nearest fruit and add NumFruits() * 2000.
+            heuristic += NumFruits() * 10000;
+            foreach (Bird bird in birds)
+                if (OBJECTS_IN_HEURISTIC || !bird.isObject)
+                {
+                    Tuple<int, int> fCoor = ClosestFruit(bird.coor[0].Item1, bird.coor[0].Item2);
+                    heuristic += Math.Abs(bird.coor[0].Item1 - fCoor.Item1);
+                    heuristic += Math.Abs(bird.coor[0].Item2 - fCoor.Item2);
+                }
+            return -heuristic;
+        }
+        public Tuple<int, int> ClosestFruit(int bx, int by)
+        {
+            int minDist = int.MaxValue;
+            int fx = -1, fy = -1;
+            for (int x = 0; x < level.GetLength(0); x++)
+                    for (int y = 0; y < level.GetLength(1); y++)
+                        if (level[x, y] == Block.FRUIT)
+                        {
+                            int dist = Math.Abs(x - bx) + Math.Abs(y - by);
+                            if (dist < minDist)
+                            {
+                                minDist = dist;
+                                fx = x;
+                                fy = y;
+                            }
+                        }
+            return new Tuple<int, int>(fx, fy);
         }
 
         public override string ToString()
@@ -365,6 +432,11 @@ namespace SnakebirdSolver
             return string.Join<string>("", strings);
         }
 
+        public int CompareTo(State other)
+        {
+            return Heuristic() - other.Heuristic();
+        }
+
         static char BirdChar(int bird, int segment)
         {
             return new string[] {
@@ -420,7 +492,7 @@ namespace SnakebirdSolver
         }
     }
 
-    class Bird
+    public class Bird
     {
         public static StringBuilder sb = new StringBuilder();
         public bool isObject;
@@ -629,7 +701,7 @@ namespace SnakebirdSolver
             // Level 43:
             //string levelString = "...==...../...===..../...===..@./....=...../...123..../.X.CBA.X../...%*%..../...%%%..=./...=X=..=.";
             // Level 45:
-            string levelString = "........./....%..../...X$..../....$..../..=.=...@/..X....../34X....../21..XABC./=XX*.==../==...==../=.....=../...*...../........./........./...=...../..X=X....";
+            //string levelString = "........./....%..../...X$..../....$..../..=.=...@/..X....../34X....../21..XABC./=XX*.==../==...==../=.....=../...*...../........./........./...=...../..X=X....";
             // Level *1:
             //string levelString = "........=XXXXX......../........=............./........=............./........=.XXXX......../..@..........X......../....................../...............123.=../.===............%4..../====................../====...........ABC..=./.==............abcd.../................%...../...............=====..";
             // Level *2:
@@ -639,7 +711,7 @@ namespace SnakebirdSolver
             // Level *4:
             //string levelString = "......@....../............./............./............./......X....../....%...%..../....$..X$..../....&...&..../...123XCBA.../..=========..";
             // Level *6:
-            //string levelString = "............/............/......@...../............/......=...../..%%......../..=.....=.../..==....=.../........==../..$$......../..==......../..==.&&&==../..==.....=../..123&&&..../..CBA==abc../..========../..=======...";
+            string levelString = "............/............/......@...../............/......=...../..%%......../..=.....=.../..==....=.../........==../..$$......../..==......../..==.&&&==../..==.....=../..123&&&..../..CBA==abc../..========../..=======...";
             State start = new State(levelString);
             Console.WriteLine(start);
             Console.WriteLine("Starting search...");
@@ -648,9 +720,10 @@ namespace SnakebirdSolver
             // Search.
             Dictionary<State, State> stateParents = new Dictionary<State, State>();
             stateParents.Add(start, null);
-            Queue<State> queue = new Queue<State>();
+            // Uses a priority queue if true, a regular queue if false.
+            FlexQueue<State> queue = new FlexQueue<State>(false);
             queue.Enqueue(start);
-            while (queue.Count > 0)
+            while (!queue.IsEmpty())
             {
                 // Search.
                 State state = queue.Dequeue();
