@@ -1,7 +1,7 @@
 ﻿// TODO
-//    - Test that state hashing is actually detecting functionally identical states.
 //    - Only allow birds to teleport if they weren't in the same square with the teleporter in the previous state or during a fall.
 //    - If a bird falls or is pushed into an exit, remove it.
+//    - We need a proper search strategy, akin to an A* only we don't actually care about finding the shortest path. Heuristic: minimize fruits, then summed distance of all bird coors to exit.
 //    - Store coordinates as single numbers instead of tuples?
 
 using System;
@@ -20,7 +20,7 @@ namespace SnakebirdSolver
     class State
     {
         // Set this flag to false if you're sure no objects should fall off an edge during the correct solution.
-        static bool OBJECTS_CAN_DIE = true;
+        static bool OBJECTS_CAN_DIE = false;
 
         public static StringBuilder sb = new StringBuilder();
         public Block[,] level;
@@ -344,10 +344,15 @@ namespace SnakebirdSolver
             if (!(obj is State))
                 return false;
             State other = (State)obj;
-            return GetHashCode() == other.GetHashCode();
+            return GetHashString() == other.GetHashString();
         }
 
         public override int GetHashCode()
+        {
+            return GetHashString().GetHashCode();
+        }
+
+        public string GetHashString()
         {
             List<string> strings = new List<string>();
             foreach (Bird bird in birds)
@@ -357,7 +362,7 @@ namespace SnakebirdSolver
                 for (int x = 0; x < level.GetLength(0); x++)
                     if (level[x, y] == Block.FRUIT)
                         strings.Add("fruit(" + x + ',' + y + ')');
-            return string.Join<string>("", strings).GetHashCode();
+            return string.Join<string>("", strings);
         }
 
         static char BirdChar(int bird, int segment)
@@ -610,7 +615,7 @@ namespace SnakebirdSolver
             // Level 28:
             //string levelString = ".....@..../........../........../..=.%...../..===..X../....*=..../.....=..../..X=%...../.....321../....=ABC../...=====../...=====..";
             // Level 29:
-            string levelString = "......@..../.........../.........../.........../.........../.........../...123...../...%%....../...%%....../.$$&&##..../.$$&&##.ABC/.=====..==./.==========";
+            //string levelString = "......@.../........../........../........../........../........../...123..../...%%...../...%%...../.$$&&##..C/.$$&&##.AB/.=====..==/.=========";
             // Level 35:
             //string levelString = ".=====../......../.....=../.....X../......*./...O.=../.....=../......../@.321.../..4=..../...=..../....O.../...XX.../...*..../...==.../...==...";
             // Level 39:
@@ -624,9 +629,9 @@ namespace SnakebirdSolver
             // Level 43:
             //string levelString = "...==...../...===..../...===..@./....=...../...123..../.X.CBA.X../...%*%..../...%%%..=./...=X=..=.";
             // Level 45:
-            //string levelString = "........../.....%..../....X$..../.....$..../...=.=...@/...X....../...X....../321..XABC./4=XX*.==../.==...==../.=.....=../....*...../........../........../....=...../...X=X....";
+            string levelString = "........./....%..../...X$..../....$..../..=.=...@/..X....../34X....../21..XABC./=XX*.==../==...==../=.....=../...*...../........./........./...=...../..X=X....";
             // Level *1:
-            //string levelString = "........=XXXXX......../........=............./........=............./........=.XXXX......../..@..........X......../....................../...............123.=../.===............%4..../====................../====...........ABC..=./.==............abcd.../................%...../...............=====../...............=====../................===...";
+            //string levelString = "........=XXXXX......../........=............./........=............./........=.XXXX......../..@..........X......../....................../...............123.=../.===............%4..../====................../====...........ABC..=./.==............abcd.../................%...../...............=====..";
             // Level *2:
             //string levelString = ".=======....../.=.*.*.==...../==*=*=*==.===./=*******======/=.=*=*=.123.@=/=*******=====./==*=*=*====.../.=.*.*.=....../..======......";
             // Level *3:
