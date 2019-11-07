@@ -47,5 +47,6 @@ Temporary Items
 .apdisk
 
 # VS binary files
+.vs/*
 SnakebirdSolver/bin/*
 SnakebirdSolver/obj/*

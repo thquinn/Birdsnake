@@ -21,10 +21,9 @@ $ second object
 Run the solver and wait for it to finish. Then, follow the sequence of states it outputs.
 
 ## What's Broken?
-* No teleporter support.
-* The game will take forever and/or run out of memory solving the game's most complex levels. Here are the levels it can currently solve:
+* Not much, anymore! Even with my meager 8GB of RAM, I was able to tweak it to solve everything except Star-6:
 
-![Solvable Levels](http://i.imgur.com/KHxAiIt.png)
+![Solvable Levels](https://i.imgur.com/U3V2rZo.png)
 
 ## Standard Disclaimer
-This code is presented as is, etc, etc, do whatever you want with it. I wrote this code in four bleary-eyed hours; it is not representative of my typical coding style of quality, so give me a break here.
+This code is presented as is, etc, etc, do whatever you want with it. I wrote this code in six bleary-eyed hours; it is not representative of my typical coding style of quality, so give me a break here.

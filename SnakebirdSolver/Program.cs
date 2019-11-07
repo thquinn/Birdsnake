@@ -1,8 +1,8 @@
 ﻿// TODO
 //    - Only allow birds to teleport if they weren't in the same square with the teleporter in the previous state or during a fall.
 //    - If a bird falls or is pushed into an exit, remove it.
-//    - We need a proper search strategy, akin to an A* only we don't actually care about finding the shortest path. Heuristic: minimize fruits, then summed distance of all bird coors to exit.
-//    - Store coordinates as single numbers instead of tuples?
+//    - Record bird index and direction that generates each state, and use that to enter solutions automatically
+//    - Change coordinates to byte tuples
 
 using System;
 using System.Collections.Generic;
@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 
 namespace SnakebirdSolver
 {
-    public enum Block
+    public enum Block : byte
     {
         EMPTY, PLATFORM, FRUIT, SPIKE, TELEPORTER, EXIT
     }
@@ -21,12 +21,16 @@ namespace SnakebirdSolver
     {
         // Set this flag to false if you're sure no objects should fall off an edge during the correct solution.
         static bool OBJECTS_CAN_DIE = false;
-        // Set this flag to true if getting objects closer to the exit seems like it's part of the solution.
-        static bool OBJECTS_IN_HEURISTIC = true;
+        // Set this param higher if getting objects closer to the exit seems like it's part of the solution.
+        // 0: Objects will not get any closer to the exit during a correct solution.
+        // 1: Objects will need to get closer to the exit during a correct solution.
+        // 2-1000: Progress cannot be made unless objects get closer to the exit.
+        static int OBJECTS_HEURISTIC_MULTIPLIER = 0;
 
         public static StringBuilder sb = new StringBuilder();
         public Block[,] level;
         public List<Bird> birds;
+        public int teleporterBlockedBy;
         public bool win;
 
         public State(string levelString)
@@ -41,6 +45,7 @@ namespace SnakebirdSolver
             birds.Add(new Bird(levelString, '&'));
             birds.Add(new Bird(levelString, '#'));
             birds.RemoveAll(bird => bird.coor.Count == 0);
+            teleporterBlockedBy = -1;
             win = false;
         }
 
@@ -51,6 +56,7 @@ namespace SnakebirdSolver
             birds = new List<Bird>();
             foreach (Bird otherBird in other.birds)
                 birds.Add(new Bird(otherBird));
+            teleporterBlockedBy = other.teleporterBlockedBy;
             win = false;
         }
 
@@ -84,6 +90,9 @@ namespace SnakebirdSolver
 
         public State Move(int birdIndex, int dx, int dy)
         {
+            if (GetHashCode() == -357158129) {
+                Console.WriteLine("!");
+            }
             State copy = new State(this);
             Bird bird = copy.birds[birdIndex];
             // Check for fruit eat.
@@ -121,43 +130,46 @@ namespace SnakebirdSolver
             while (fallingBirds.Count > 0)
             {
                 // Check for teleporting birds.
-                foreach (Bird bird in fallingBirds)
+                for (int i = 0; i < fallingBirds.Count; i++) {
+                    Bird bird = fallingBirds[i];
+                    if (teleporterBlockedBy == i) {
+                        continue;
+                    }
                     foreach (Tuple<int, int> c in bird.coor)
-                        if (level[c.Item1, c.Item2] == Block.TELEPORTER)
-                        {
+                        if (level[c.Item1, c.Item2] == Block.TELEPORTER) {
+                            teleporterBlockedBy = i;
                             // Find the other teleporter.
                             int tx = -1, ty = -1;
                             for (int x = 0; x < level.GetLength(0) && tx == -1; x++)
                                 for (int y = 0; y < level.GetLength(1) - 1; y++)
                                     if (x == c.Item1 && y == c.Item2)
                                         continue;
-                                    else if (level[x, y] == Block.TELEPORTER)
-                                    {
+                                    else if (level[x, y] == Block.TELEPORTER) {
                                         tx = x;
                                         ty = y;
                                         break;
                                     }
                             // Check all coordinates to make see if the other side of the teleporter is empty.
                             bool tpClear = true;
-                            foreach (Tuple<int, int> cCheck in bird.coor)
-                            {
+                            foreach (Tuple<int, int> cCheck in bird.coor) {
                                 int dx = cCheck.Item1 - c.Item1;
                                 int dy = cCheck.Item2 - c.Item2;
-                                if (IsSolid(level[tx + dx, ty + dy]))
-                                {
+                                if (IsSolid(level[tx + dx, ty + dy]) || IsOtherBirdAt(bird, tx + dx, ty + dy)) {
                                     tpClear = false;
                                     break;
                                 }
                             }
-                            if (tpClear)
-                            {
+                            if (tpClear) {
                                 int shiftX = tx - c.Item1;
                                 int shiftY = ty - c.Item2;
-                                for (int i = 0; i < bird.coor.Count; i++)
-                                    bird.coor[i] = new Tuple<int, int>(bird.coor[i].Item1 + shiftX, bird.coor[i].Item2 + shiftY);
+                                for (int j = 0; j < bird.coor.Count; j++)
+                                    bird.coor[j] = new Tuple<int, int>(bird.coor[j].Item1 + shiftX, bird.coor[j].Item2 + shiftY);
+                            } else {
+
                             }
                             break;
                         }
+                }
 
                 // Kill anything in the bottom row.
                 // We shouldn't have to do this check again here, but it's not working without it, so...
@@ -175,7 +187,7 @@ namespace SnakebirdSolver
                                 break;
                             }
                 }
-                
+
                 // Check for landed birds.
                 bool fall = true;
                 for (int i = fallingBirds.Count - 1; i >= 0; i--)
@@ -189,28 +201,26 @@ namespace SnakebirdSolver
                             break;
                         }
                 }
-                if (fall)
-                {
+                if (fall) {
                     // Fall every falling bird.
                     foreach (Bird fallingBird in fallingBirds)
                         for (int i = 0; i < fallingBird.coor.Count; i++)
                             fallingBird.coor[i] = new Tuple<int, int>(fallingBird.coor[i].Item1, fallingBird.coor[i].Item2 + 1);
                     // Kill anything in the bottom row.
-                    for (int i = birds.Count - 1; i >= 0; i--)
-                    {
+                    for (int i = birds.Count - 1; i >= 0; i--) {
                         Bird bird = birds[i];
                         foreach (Tuple<int, int> c in bird.coor)
                             if (c.Item2 >= level.GetLength(1) - 1)
                                 if (!bird.isObject || !OBJECTS_CAN_DIE)
                                     return false;
-                                else
-                                {
+                                else {
                                     fallingBirds.Remove(bird);
                                     birds.Remove(bird);
                                     break;
                                 }
                     }
                 }
+                UnblockTeleporters();
             }
 
             // If there are any real birds sitting only on spikes, we lose.
@@ -228,8 +238,17 @@ namespace SnakebirdSolver
                 if (!safe)
                     return false;
             }
-
             return true;
+        }
+
+        public void UnblockTeleporters() {
+            if (teleporterBlockedBy == -1 || teleporterBlockedBy >= birds.Count) {
+                return;
+            }
+            foreach (Tuple<int, int> c in birds[teleporterBlockedBy].coor)
+                if (level[c.Item1, c.Item2] == Block.TELEPORTER)
+                    return;
+            teleporterBlockedBy = -1;
         }
 
         public bool IsOtherBirdAt(Bird bird, int x, int y)
@@ -307,6 +326,9 @@ namespace SnakebirdSolver
 
         public int Heuristic()
         {
+            if (win)
+                return int.MaxValue;
+
             int heuristic = 0;
 
             // If the exit is open, sum distances of bird heads from exit.
@@ -322,23 +344,36 @@ namespace SnakebirdSolver
                             break;
                         }
                 foreach (Bird bird in birds)
-                    if (OBJECTS_IN_HEURISTIC || !bird.isObject)
+                {
+                    if (bird.isObject && OBJECTS_HEURISTIC_MULTIPLIER == 0)
+                        continue;
+                    int dist;
+                    if (bird.isObject)
                     {
-                        heuristic += Math.Abs(bird.coor[0].Item1 - ex);
-                        heuristic += Math.Abs(bird.coor[0].Item2 - ey);
+                        dist = 0;
+                        foreach (Tuple<int, int> c in bird.coor)
+                            dist += Math.Abs(c.Item1 - ex) + Math.Abs(c.Item2 - ey);
+                        dist *= OBJECTS_HEURISTIC_MULTIPLIER;
+                        dist /= bird.coor.Count;
                     }
+                    else
+                        dist = Math.Abs(bird.coor[0].Item1 - ex) + Math.Abs(bird.coor[0].Item2 - ey);
+                    heuristic += dist;
+                }
                 return -heuristic;
             }
 
-            // Otherwise, sum the distance of bird heads to their nearest fruit and add NumFruits() * 2000.
+            // Otherwise, sum the distance of bird heads to their nearest fruit and add NumFruits() * 10000.
             heuristic += NumFruits() * 10000;
             foreach (Bird bird in birds)
-                if (OBJECTS_IN_HEURISTIC || !bird.isObject)
-                {
-                    Tuple<int, int> fCoor = ClosestFruit(bird.coor[0].Item1, bird.coor[0].Item2);
-                    heuristic += Math.Abs(bird.coor[0].Item1 - fCoor.Item1);
-                    heuristic += Math.Abs(bird.coor[0].Item2 - fCoor.Item2);
-                }
+            {
+                if (bird.isObject)
+                    continue;
+                Tuple<int, int> fCoor = ClosestFruit(bird.coor[0].Item1, bird.coor[0].Item2);
+                heuristic += Math.Abs(bird.coor[0].Item1 - fCoor.Item1) + Math.Abs(bird.coor[0].Item2 - fCoor.Item2);
+            }
+
+            // Negate the heuristic, since the farther away everything is, the worse its eval should be.
             return -heuristic;
         }
         public Tuple<int, int> ClosestFruit(int bx, int by)
@@ -700,6 +735,8 @@ namespace SnakebirdSolver
             //string levelString = ".......XX=./.......===./........=../...=.21.=.@/.=...AB..../...*X*=..=./..X......=./..==.=...=.";
             // Level 43:
             //string levelString = "...==...../...===..../...===..@./....=...../...123..../.X.CBA.X../...%*%..../...%%%..=./...=X=..=.";
+            // Level 44:
+            //string levelString = "............./............./............./....O......../......*...@../..X*........./....X......../...21.O....../...AB......../..X====..X=../...====...=..";
             // Level 45:
             //string levelString = "........./....%..../...X$..../....$..../..=.=...@/..X....../34X....../21..XABC./=XX*.==../==...==../=.....=../...*...../........./........./...=...../..X=X....";
             // Level *1:
@@ -710,8 +747,13 @@ namespace SnakebirdSolver
             //string levelString = "..........=..../..........=..../@........%%%..X/.........%1%.../.........%2%.../..........3..../........BA4...X/....=...Ccba=XX/...==....X=XX../.............../...==........../.......=.......";
             // Level *4:
             //string levelString = "......@....../............./............./............./......X....../....%...%..../....$..X$..../....&...&..../...123XCBA.../..=========..";
+            // Level *5 Finale:
+            //string levelString = "..============/...==========./...==========./.....=====.=../..........@.../...BA.X...=.../...C=.==....../...D=O.=....../....=..=....../....==X=....../......O1....../.......2%...../.......3%...../.......4%...../.....====...../......==......";
             // Level *6:
-            string levelString = "............/............/......@...../............/......=...../..%%......../..=.....=.../..==....=.../........==../..$$......../..==......../..==.&&&==../..==.....=../..123&&&..../..CBA==abc../..========../..=======...";
+            //string levelString = "............/............/......@...../............/......=...../..%%......../..=.....=.../..==....=.../........==../..$$......../..==......../..==.&&&==../..==.....=../..123&&&..../..CBA==abc../..========../..=======...";
+            // Final Level:
+            //string levelString = ".....====......./......====....../......=*=..*..../....%.=*=......./....1.........../....2.........../...BAab........./...====X......../...===........../....===.......@./.....=........../....=.......X.../............=...";
+            string levelString = "....====...../....=*=..*.../..%.=*=....../..1........../..2........../.BAab......../.====X......./.===........./..===.......@/...=........./..=.......X../..........=..";
             State start = new State(levelString);
             Console.WriteLine(start);
             Console.WriteLine("Starting search...");
@@ -721,7 +763,7 @@ namespace SnakebirdSolver
             Dictionary<State, State> stateParents = new Dictionary<State, State>();
             stateParents.Add(start, null);
             // Uses a priority queue if true, a regular queue if false.
-            FlexQueue<State> queue = new FlexQueue<State>(false);
+            FlexQueue<State> queue = new FlexQueue<State>(false, 100000);
             queue.Enqueue(start);
             while (!queue.IsEmpty())
             {
@@ -737,7 +779,7 @@ namespace SnakebirdSolver
                     if (stateParents.Count % 1000 == 0)
                     {
                         Console.WriteLine(state);
-                        Console.WriteLine("Searched " + stateParents.Count + " nodes...");
+                        Console.WriteLine("Searched " + stateParents.Count + " nodes (" + queue.Count() + " nodes in queue)...");
                         Console.WriteLine();
                     }
 
@@ -755,11 +797,12 @@ namespace SnakebirdSolver
                         Console.Clear();
                         foreach (State nodePrint in winPath)
                         {
+                            Console.WriteLine(nodePrint.GetHashCode());
                             Console.WriteLine(nodePrint);
                             Console.WriteLine();
                         }
                         Console.WriteLine("Path of length " + winPath.Count + " found. Searched " + stateParents.Count + " nodes.");
-                        Console.ReadKey();
+                        Console.ReadLine();
                         return;
                     }
                 }
